@@ -1,4 +1,4 @@
-package cmap
+package fenech
 
 import "testing"
 import "strconv"
@@ -8,7 +8,7 @@ func BenchmarkItems(b *testing.B) {
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), Animal{strconv.Itoa(i)})
+		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
 		m.Items()
@@ -20,7 +20,7 @@ func BenchmarkMarshalJson(b *testing.B) {
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), Animal{strconv.Itoa(i)})
+		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
 		m.MarshalJSON()
@@ -37,16 +37,16 @@ func BenchmarkSingleInsertAbsent(b *testing.B) {
 	m := New()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Set(strconv.Itoa(i), "value")
+		m.Set(strconv.Itoa(i), []byte("value"))
 	}
 }
 
 func BenchmarkSingleInsertPresent(b *testing.B) {
 	m := New()
-	m.Set("key", "value")
+	m.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Set("key", "value")
+		m.Set("key", []byte("value"))
 	}
 }
 
@@ -80,7 +80,7 @@ func BenchmarkMultiInsertSame(b *testing.B) {
 	m := New()
 	finished := make(chan struct{}, b.N)
 	_, set := GetSet(m, finished)
-	m.Set("key", "value")
+	m.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set("key", "value")
@@ -94,7 +94,7 @@ func BenchmarkMultiGetSame(b *testing.B) {
 	m := New()
 	finished := make(chan struct{}, b.N)
 	get, _ := GetSet(m, finished)
-	m.Set("key", "value")
+	m.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		get("key", "value")
@@ -108,7 +108,7 @@ func benchmarkMultiGetSetDifferent(b *testing.B) {
 	m := New()
 	finished := make(chan struct{}, 2*b.N)
 	get, set := GetSet(m, finished)
-	m.Set("-1", "value")
+	m.Set("-1", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set(strconv.Itoa(i-1), "value")
@@ -137,7 +137,7 @@ func benchmarkMultiGetSetBlock(b *testing.B) {
 	finished := make(chan struct{}, 2*b.N)
 	get, set := GetSet(m, finished)
 	for i := 0; i < b.N; i++ {
-		m.Set(strconv.Itoa(i%100), "value")
+		m.Set(strconv.Itoa(i%100), []byte("value"))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -170,7 +170,7 @@ func GetSet(m ConcurrentMap, finished chan struct{}) (set func(key, value string
 			finished <- struct{}{}
 		}, func(key, value string) {
 			for i := 0; i < 10; i++ {
-				m.Set(key, value)
+				m.Set(key, []byte(value))
 			}
 			finished <- struct{}{}
 		}
@@ -188,7 +188,7 @@ func BenchmarkKeys(b *testing.B) {
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), Animal{strconv.Itoa(i)})
+		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
 		m.Keys()
