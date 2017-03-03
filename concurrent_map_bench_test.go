@@ -24,17 +24,6 @@ func BenchmarkItems(b *testing.B) {
 	}
 }
 
-func BenchmarkMarshalJson(b *testing.B) {
-
-	// Insert 100 elements.
-	for i := 0; i < 10000; i++ {
-		DB.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
-	}
-	for i := 0; i < b.N; i++ {
-		DB.MarshalJSON()
-	}
-}
-
 func BenchmarkStrconv(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		strconv.Itoa(i)

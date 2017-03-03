@@ -36,6 +36,15 @@ func (b *binlog) Commit(f *Fenech) {
 	}()
 }
 
+func (f *Fenech) clearBinlog() error {
+	for _, blog := range f.binlog {
+		if err := blog.file.Truncate(0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (f *Fenech) restoreBinlog() error {
 	wg := new(sync.WaitGroup)
 	for key, blog := range f.binlog {

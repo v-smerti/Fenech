@@ -2,6 +2,7 @@ package fenech
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"strconv"
 	"sync"
@@ -42,21 +43,22 @@ func New(dir string) (*Fenech, error) {
 	f := new(Fenech)
 	f.maps = m
 	f.binlog = b
+	if err := f.restoreSnapshot(dir); err != nil {
+		return new(Fenech), err
+	}
 	if err := f.restoreBinlog(); err != nil {
+		return new(Fenech), err
+	}
+	if err := f.upSnapshot(dir); err != nil {
+		return new(Fenech), err
+	}
+	if err := f.clearBinlog(); err != nil {
 		return new(Fenech), err
 	}
 	return f, nil
 }
 
 func openFile(file string) (*os.File, error) {
-	/*if _, err := os.Stat(file); os.IsNotExist(err) {
-		if _, err := os.Create(file); err != nil {
-			return new(os.File), err
-		}
-	} else if err != nil {
-		return new(os.File), err
-	}*/
-	//O_RDONLY, O_WRONLY, or O_RDWR
 	return os.OpenFile(file, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
 }
 
@@ -324,7 +326,7 @@ func (f *Fenech) Keys() []string {
 }
 
 //Reviles ConcurrentMap "private" variables to json marshal.
-func (f *Fenech) MarshalJSON() ([]byte, error) {
+func (f *Fenech) marshalJSON(w io.Writer) error {
 	// Create a temporary map, which will hold all item spread across shards.
 	tmp := make(map[string][]byte)
 
@@ -332,7 +334,8 @@ func (f *Fenech) MarshalJSON() ([]byte, error) {
 	for item := range f.IterBuffered() {
 		tmp[item.Key] = item.Val
 	}
-	return json.Marshal(tmp)
+
+	return json.NewEncoder(w).Encode(tmp)
 }
 
 // Concurrent map uses Interface{} as its value, therefor JSON Unmarshal
@@ -340,18 +343,19 @@ func (f *Fenech) MarshalJSON() ([]byte, error) {
 // we'll end up with a value of type map[string]interface{}, In most cases this isn't
 // out value type, this is why we've decided to remove this functionality.
 
-func (f *Fenech) UnmarshalJSON(b []byte) (err error) {
+func (f *Fenech) unmarshalJSON(data []byte) (err error) {
 	// Reverse process of Marshal.
 	tmp := make(map[string][]byte)
-
-	// Unmarshal into a single map.
-	if err := json.Unmarshal(b, &tmp); err != nil {
-		return nil
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
 	}
 
 	// foreach key,value pair in temporary map insert into our concurrent map.
 	for key, val := range tmp {
-		f.Set(key, val)
+		shard := f.getShard(key)
+		shard.Lock()
+		shard.items[key] = val
+		shard.Unlock()
 	}
 	return nil
 }
