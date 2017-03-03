@@ -12,11 +12,12 @@ const SHARD_COUNT = 32
 type Fenech struct {
 	maps   ConcurrentMap
 	binlog ConcurrentBinlog
+	sync.Mutex
 }
 type ConcurrentBinlog []*ConcurrentBinlogShared
 type ConcurrentBinlogShared struct {
 	file *os.File
-	sync.RWMutex
+	sync.Mutex
 }
 
 type ConcurrentMap []*ConcurrentMapShared
@@ -41,18 +42,22 @@ func New(dir string) (*Fenech, error) {
 	f := new(Fenech)
 	f.maps = m
 	f.binlog = b
+	if err := f.restoreBinlog(); err != nil {
+		return new(Fenech), err
+	}
 	return f, nil
 }
 
 func openFile(file string) (*os.File, error) {
-	if _, err := os.Stat(file); os.IsNotExist(err) {
+	/*if _, err := os.Stat(file); os.IsNotExist(err) {
 		if _, err := os.Create(file); err != nil {
 			return new(os.File), err
 		}
 	} else if err != nil {
 		return new(os.File), err
-	}
-	return os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+	}*/
+	//O_RDONLY, O_WRONLY, or O_RDWR
+	return os.OpenFile(file, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
 }
 
 // Returns shard under given key
