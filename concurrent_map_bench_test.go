@@ -3,27 +3,35 @@ package fenech
 import "testing"
 import "strconv"
 
+var DB *Fenech
+
+func init() {
+	M, err := New("./test")
+	if err != nil {
+		panic(err)
+	}
+	DB = M
+
+}
 func BenchmarkItems(b *testing.B) {
-	m := New()
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
+		DB.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
-		m.Items()
+		DB.Items()
 	}
 }
 
 func BenchmarkMarshalJson(b *testing.B) {
-	m := New()
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
+		DB.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
-		m.MarshalJSON()
+		DB.MarshalJSON()
 	}
 }
 
@@ -34,26 +42,26 @@ func BenchmarkStrconv(b *testing.B) {
 }
 
 func BenchmarkSingleInsertAbsent(b *testing.B) {
-	m := New()
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Set(strconv.Itoa(i), []byte("value"))
+		DB.Set(strconv.Itoa(i), []byte("value"))
 	}
 }
 
 func BenchmarkSingleInsertPresent(b *testing.B) {
-	m := New()
-	m.Set("key", []byte("value"))
+
+	DB.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Set("key", []byte("value"))
+		DB.Set("key", []byte("value"))
 	}
 }
 
-func benchmarkMultiInsertDifferent(b *testing.B) {
-	m := New()
+func BenchmarkMultiInsertDifferent(b *testing.B) {
+
 	finished := make(chan struct{}, b.N)
-	_, set := GetSet(m, finished)
+	_, set := GetSet(DB, finished)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set(strconv.Itoa(i), "value")
@@ -63,24 +71,11 @@ func benchmarkMultiInsertDifferent(b *testing.B) {
 	}
 }
 
-func BenchmarkMultiInsertDifferent_1_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiInsertDifferent, b, 1)
-}
-func BenchmarkMultiInsertDifferent_16_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiInsertDifferent, b, 16)
-}
-func BenchmarkMultiInsertDifferent_32_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiInsertDifferent, b, 32)
-}
-func BenchmarkMultiInsertDifferent_256_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetDifferent, b, 256)
-}
-
 func BenchmarkMultiInsertSame(b *testing.B) {
-	m := New()
+
 	finished := make(chan struct{}, b.N)
-	_, set := GetSet(m, finished)
-	m.Set("key", []byte("value"))
+	_, set := GetSet(DB, finished)
+	DB.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set("key", "value")
@@ -91,10 +86,10 @@ func BenchmarkMultiInsertSame(b *testing.B) {
 }
 
 func BenchmarkMultiGetSame(b *testing.B) {
-	m := New()
+
 	finished := make(chan struct{}, b.N)
-	get, _ := GetSet(m, finished)
-	m.Set("key", []byte("value"))
+	get, _ := GetSet(DB, finished)
+	DB.Set("key", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		get("key", "value")
@@ -104,11 +99,11 @@ func BenchmarkMultiGetSame(b *testing.B) {
 	}
 }
 
-func benchmarkMultiGetSetDifferent(b *testing.B) {
-	m := New()
+func BenchmarkMultiGetSetDifferent(b *testing.B) {
+
 	finished := make(chan struct{}, 2*b.N)
-	get, set := GetSet(m, finished)
-	m.Set("-1", []byte("value"))
+	get, set := GetSet(DB, finished)
+	DB.Set("-1", []byte("value"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set(strconv.Itoa(i-1), "value")
@@ -119,25 +114,12 @@ func benchmarkMultiGetSetDifferent(b *testing.B) {
 	}
 }
 
-func BenchmarkMultiGetSetDifferent_1_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetDifferent, b, 1)
-}
-func BenchmarkMultiGetSetDifferent_16_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetDifferent, b, 16)
-}
-func BenchmarkMultiGetSetDifferent_32_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetDifferent, b, 32)
-}
-func BenchmarkMultiGetSetDifferent_256_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetDifferent, b, 256)
-}
+func BenchmarkMultiGetSetBlock(b *testing.B) {
 
-func benchmarkMultiGetSetBlock(b *testing.B) {
-	m := New()
 	finished := make(chan struct{}, 2*b.N)
-	get, set := GetSet(m, finished)
+	get, set := GetSet(DB, finished)
 	for i := 0; i < b.N; i++ {
-		m.Set(strconv.Itoa(i%100), []byte("value"))
+		DB.Set(strconv.Itoa(i%100), []byte("value"))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -149,20 +131,7 @@ func benchmarkMultiGetSetBlock(b *testing.B) {
 	}
 }
 
-func BenchmarkMultiGetSetBlock_1_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetBlock, b, 1)
-}
-func BenchmarkMultiGetSetBlock_16_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetBlock, b, 16)
-}
-func BenchmarkMultiGetSetBlock_32_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetBlock, b, 32)
-}
-func BenchmarkMultiGetSetBlock_256_Shard(b *testing.B) {
-	runWithShards(benchmarkMultiGetSetBlock, b, 256)
-}
-
-func GetSet(m ConcurrentMap, finished chan struct{}) (set func(key, value string), get func(key, value string)) {
+func GetSet(m *Fenech, finished chan struct{}) (set func(key, value string), get func(key, value string)) {
 	return func(key, value string) {
 			for i := 0; i < 10; i++ {
 				m.Get(key)
@@ -176,21 +145,13 @@ func GetSet(m ConcurrentMap, finished chan struct{}) (set func(key, value string
 		}
 }
 
-func runWithShards(bench func(b *testing.B), b *testing.B, shardsCount int) {
-	oldShardsCount := SHARD_COUNT
-	SHARD_COUNT = shardsCount
-	bench(b)
-	SHARD_COUNT = oldShardsCount
-}
-
 func BenchmarkKeys(b *testing.B) {
-	m := New()
 
 	// Insert 100 elements.
 	for i := 0; i < 10000; i++ {
-		m.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
+		DB.Set(strconv.Itoa(i), []byte(strconv.Itoa(i)))
 	}
 	for i := 0; i < b.N; i++ {
-		m.Keys()
+		DB.Keys()
 	}
 }
