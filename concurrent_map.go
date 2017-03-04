@@ -1,8 +1,6 @@
 package fenech
 
 import (
-	"encoding/json"
-	"io"
 	"os"
 	"strconv"
 	"sync"
@@ -208,6 +206,7 @@ func (f *Fenech) IsEmpty() bool {
 }
 
 // Used by the Iter & IterBuffered functions to wrap two variables together over a channel,
+//easyjson:json
 type Tuple struct {
 	Key string
 	Val []byte
@@ -323,41 +322,6 @@ func (f *Fenech) Keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-//Reviles ConcurrentMap "private" variables to json marshal.
-func (f *Fenech) marshalJSON(w io.Writer) error {
-	// Create a temporary map, which will hold all item spread across shards.
-	tmp := make(map[string][]byte)
-
-	// Insert items to temporary map.
-	for item := range f.IterBuffered() {
-		tmp[item.Key] = item.Val
-	}
-
-	return json.NewEncoder(w).Encode(tmp)
-}
-
-// Concurrent map uses Interface{} as its value, therefor JSON Unmarshal
-// will probably won't know which to type to unmarshal into, in such case
-// we'll end up with a value of type map[string]interface{}, In most cases this isn't
-// out value type, this is why we've decided to remove this functionality.
-
-func (f *Fenech) unmarshalJSON(data []byte) (err error) {
-	// Reverse process of Marshal.
-	tmp := make(map[string][]byte)
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
-	}
-
-	// foreach key,value pair in temporary map insert into our concurrent map.
-	for key, val := range tmp {
-		shard := f.getShard(key)
-		shard.Lock()
-		shard.items[key] = val
-		shard.Unlock()
-	}
-	return nil
 }
 
 func fnv32(key string) uint32 {
