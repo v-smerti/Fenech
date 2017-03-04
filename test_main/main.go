@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -27,12 +28,21 @@ func main() {
 func fps() {
 	var i int64 = 0
 	r := new(sync.RWMutex)
+	WG := new(sync.WaitGroup)
+	WG.Add(1)
 	go func() {
+
+		defer WG.Done()
 		var localI int64 = 0
-		count := int64(DB.Count())
+		counts, err := DB.Count()
+		if err != nil {
+			panic(err.Error())
+		}
+		count := int64(counts)
 		for {
 			time.Sleep(2 * time.Second)
 			r.RLock()
+
 			if localI == 0 {
 				count = count + i
 				fmt.Println("FPS 1: ", i, "Len: ", count)
@@ -43,6 +53,12 @@ func fps() {
 			}
 			localI = i
 			r.RUnlock()
+			if localI > 300000 {
+				fmt.Println("start close DB")
+				DB.Close()
+				break
+			}
+
 		}
 	}()
 	q := 0
@@ -51,24 +67,40 @@ func fps() {
 		if q > 30 {
 			break
 		}
-		log.Println(q)
+		WG.Add(1)
 		go func() {
+
+			defer WG.Done()
 			for {
 				r.Lock()
 				i = i + 1
 				r.Unlock()
-				if err := DB.Set(uid.NewV4().String(), uid.NewV4().Bytes()); err != nil {
-					log.Fatal(err)
+				if err := DB.Set(uid.NewV4().String(), SecureRandomBytes(10)); err != nil {
+					log.Println(err)
+					break
 				}
 			}
 		}()
 	}
-	for {
-		r.Lock()
-		i = i + 1
-		r.Unlock()
-		if err := DB.Set(uid.NewV4().String(), uid.NewV4().Bytes()); err != nil {
-			log.Fatal(err)
-		}
+
+	fmt.Println("main")
+	WG.Wait()
+	fmt.Println("main упал")
+	//fmt.Println("ожидаю завершения всех операций DB")
+	DB.Wait()
+}
+
+const (
+	letterBytes   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" // 52 possibilities
+	letterIdxBits = 6                                                      // 6 bits to represent 64 possibilities / indexes
+	letterIdxMask = 1<<letterIdxBits - 1                                   // All 1-bits, as many as letterIdxBits
+)
+
+func SecureRandomBytes(length int) []byte {
+	var randomBytes = make([]byte, length)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		log.Fatal("Unable to generate random bytes")
 	}
+	return randomBytes
 }

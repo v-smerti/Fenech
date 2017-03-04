@@ -1,6 +1,7 @@
 package fenech
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"sync"
@@ -11,7 +12,9 @@ const SHARD_COUNT = 250
 type Fenech struct {
 	maps   ConcurrentMap
 	binlog ConcurrentBinlog
-	sync.Mutex
+	done   *sync.WaitGroup
+	sync.RWMutex
+	cl bool
 }
 type ConcurrentBinlog []*ConcurrentBinlogShared
 type ConcurrentBinlogShared struct {
@@ -41,6 +44,8 @@ func New(dir string) (*Fenech, error) {
 	f := new(Fenech)
 	f.maps = m
 	f.binlog = b
+	f.done = new(sync.WaitGroup)
+	f.cl = false
 	if err := f.restoreSnapshot(dir); err != nil {
 		return new(Fenech), err
 	}
@@ -53,7 +58,27 @@ func New(dir string) (*Fenech, error) {
 	if err := f.clearBinlog(); err != nil {
 		return new(Fenech), err
 	}
+
 	return f, nil
+}
+func (f *Fenech) Wait() {
+	f.done.Wait()
+}
+
+func (f *Fenech) Close() {
+	f.Lock()
+	f.cl = true
+	f.Unlock()
+}
+
+func (f *Fenech) isClose() error {
+	f.RLock()
+	defer f.RUnlock()
+	if f.cl {
+		return errors.New("close db")
+	} else {
+		return nil
+	}
 }
 
 func openFile(file string) (*os.File, error) {
@@ -70,7 +95,9 @@ func getShardId(key string) uint {
 }
 
 func (f *Fenech) MSet(data map[string][]byte) error {
-
+	if err := f.isClose(); err != nil {
+		return err
+	}
 	for key, value := range data {
 		if err := putBinlog(f, key, value); err != nil {
 			return err
@@ -85,6 +112,9 @@ func (f *Fenech) MSet(data map[string][]byte) error {
 
 // Sets the given value under the specified key.
 func (f *Fenech) Set(key string, value []byte) error {
+	if err := f.isClose(); err != nil {
+		return err
+	}
 	if err := putBinlog(f, key, value); err != nil {
 		return err
 	}
@@ -104,7 +134,9 @@ type UpsertCb func(exist bool, valueInMap []byte, newValue []byte) []byte
 
 // Insert or Update - updates existing element or inserts a new one using UpsertCb
 func (f *Fenech) Upsert(key string, value []byte, cb UpsertCb) ([]byte, error) {
-
+	if err := f.isClose(); err != nil {
+		return []byte{}, err
+	}
 	shard := f.getShard(key)
 	shard.Lock()
 	defer shard.Unlock()
@@ -120,6 +152,9 @@ func (f *Fenech) Upsert(key string, value []byte, cb UpsertCb) ([]byte, error) {
 
 // Sets the given value under the specified key if no value was associated with it.
 func (f *Fenech) SetIfAbsent(key string, value []byte) (bool, error) {
+	if err := f.isClose(); err != nil {
+		return false, err
+	}
 	// Get map shard.
 	shard := f.getShard(key)
 	shard.Lock()
@@ -138,18 +173,24 @@ func (f *Fenech) SetIfAbsent(key string, value []byte) (bool, error) {
 }
 
 // Retrieves an element from map under given key.
-func (f *Fenech) Get(key string) ([]byte, bool) {
+func (f *Fenech) Get(key string) ([]byte, bool, error) {
+	if err := f.isClose(); err != nil {
+		return []byte{}, false, err
+	}
 	// Get shard
 	shard := f.getShard(key)
 	shard.RLock()
 	// Get item from shard.
 	val, ok := shard.items[key]
 	shard.RUnlock()
-	return val, ok
+	return val, ok, nil
 }
 
 // Returns the number of elements within the map.
-func (f *Fenech) Count() int {
+func (f *Fenech) Count() (int, error) {
+	if err := f.isClose(); err != nil {
+		return 0, err
+	}
 	count := 0
 	for i := 0; i < SHARD_COUNT; i++ {
 		shard := f.maps[i]
@@ -157,22 +198,28 @@ func (f *Fenech) Count() int {
 		count += len(shard.items)
 		shard.RUnlock()
 	}
-	return count
+	return count, nil
 }
 
 // Looks up an item under specified key
-func (f *Fenech) Has(key string) bool {
+func (f *Fenech) Has(key string) (bool, error) {
+	if err := f.isClose(); err != nil {
+		return false, err
+	}
 	// Get shard
 	shard := f.getShard(key)
 	shard.RLock()
 	// See if element is within shard.
 	_, ok := shard.items[key]
 	shard.RUnlock()
-	return ok
+	return ok, nil
 }
 
 // Removes an element from the map.
 func (f *Fenech) Remove(key string) error {
+	if err := f.isClose(); err != nil {
+		return err
+	}
 	if err := delBinlog(f, key); err != nil {
 		return err
 	}
@@ -186,6 +233,9 @@ func (f *Fenech) Remove(key string) error {
 
 // Removes an element from the map and returns it
 func (f *Fenech) Pop(key string) ([]byte, bool, error) {
+	if err := f.isClose(); err != nil {
+		return []byte{}, false, err
+	}
 	// Try to get shard.
 	shard := f.getShard(key)
 	shard.Lock()
@@ -201,8 +251,15 @@ func (f *Fenech) Pop(key string) ([]byte, bool, error) {
 }
 
 // Checks if map is empty.
-func (f *Fenech) IsEmpty() bool {
-	return f.Count() == 0
+func (f *Fenech) IsEmpty() (bool, error) {
+	if err := f.isClose(); err != nil {
+		return false, err
+	}
+	if i, err := f.Count(); err != nil {
+		return false, err
+	} else {
+		return i == 0, nil
+	}
 }
 
 // Used by the Iter & IterBuffered functions to wrap two variables together over a channel,
@@ -215,14 +272,21 @@ type Tuple struct {
 // Returns an iterator which could be used in a for range loop.
 //
 // Deprecated: using IterBuffered() will get a better performence
-func (f *Fenech) Iter() <-chan Tuple {
+func (f *Fenech) Iter() (<-chan Tuple, error) {
 	ch := make(chan Tuple)
+	if err := f.isClose(); err != nil {
+		return ch, err
+	}
+	f.done.Add(1)
 	go func() {
+		defer f.done.Done()
 		wg := sync.WaitGroup{}
 		wg.Add(SHARD_COUNT)
 		// Foreach shard.
 		for _, shard := range f.maps {
+			f.done.Add(1)
 			go func(shard *ConcurrentMapShared) {
+				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
 				for key, val := range shard.items {
@@ -235,18 +299,26 @@ func (f *Fenech) Iter() <-chan Tuple {
 		wg.Wait()
 		close(ch)
 	}()
-	return ch
+	return ch, nil
 }
 
 // Returns a buffered iterator which could be used in a for range loop.
-func (f *Fenech) IterBuffered() <-chan Tuple {
-	ch := make(chan Tuple, f.Count())
+func (f *Fenech) IterBuffered() (<-chan Tuple, error) {
+	count, err := f.Count()
+	if err != nil {
+		return make(chan Tuple), err
+	}
+	ch := make(chan Tuple, count)
+	f.done.Add(1)
 	go func() {
+		defer f.done.Done()
 		wg := sync.WaitGroup{}
 		wg.Add(SHARD_COUNT)
 		// Foreach shard.
 		for _, shard := range f.maps {
+			f.done.Add(1)
 			go func(shard *ConcurrentMapShared) {
+				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
 				for key, val := range shard.items {
@@ -259,19 +331,23 @@ func (f *Fenech) IterBuffered() <-chan Tuple {
 		wg.Wait()
 		close(ch)
 	}()
-	return ch
+	return ch, nil
 }
 
 // Returns all items as map[string]interface{}
-func (f *Fenech) Items() map[string][]byte {
+func (f *Fenech) Items() (map[string][]byte, error) {
 	tmp := make(map[string][]byte)
+	items, err := f.IterBuffered()
+	if err != nil {
+		return tmp, err
+	}
 
 	// Insert items to temporary map.
-	for item := range f.IterBuffered() {
+	for item := range items {
 		tmp[item.Key] = item.Val
 	}
 
-	return tmp
+	return tmp, nil
 }
 
 // Iterator callback,called for every key,value found in
@@ -282,7 +358,10 @@ type IterCb func(key string, v []byte)
 
 // Callback based iterator, cheapest way to read
 // all elements in a map.
-func (f *Fenech) IterCb(fn IterCb) {
+func (f *Fenech) IterCb(fn IterCb) error {
+	if err := f.isClose(); err != nil {
+		return err
+	}
 	for idx := range f.maps {
 		shard := (f.maps)[idx]
 		shard.RLock()
@@ -291,18 +370,27 @@ func (f *Fenech) IterCb(fn IterCb) {
 		}
 		shard.RUnlock()
 	}
+	return nil
 }
 
 // Return all keys as []string
-func (f *Fenech) Keys() []string {
-	count := f.Count()
+func (f *Fenech) Keys() ([]string, error) {
+
+	count, err := f.Count()
+	if err != nil {
+		return []string{}, err
+	}
 	ch := make(chan string, count)
+	f.done.Add(1)
 	go func() {
+		defer f.done.Done()
 		// Foreach shard.
 		wg := sync.WaitGroup{}
 		wg.Add(SHARD_COUNT)
 		for _, shard := range f.maps {
+			f.done.Add(1)
 			go func(shard *ConcurrentMapShared) {
+				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
 				for key := range shard.items {
@@ -321,7 +409,7 @@ func (f *Fenech) Keys() []string {
 	for k := range ch {
 		keys = append(keys, k)
 	}
-	return keys
+	return keys, nil
 }
 
 func fnv32(key string) uint32 {

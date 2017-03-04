@@ -48,8 +48,11 @@ func (f *Fenech) upSnapshot(dir string) error {
 	if err := file.Truncate(0); err != nil {
 		return err
 	}
-
-	for item := range f.IterBuffered() {
+	items, err := f.IterBuffered()
+	if err != nil {
+		return err
+	}
+	for item := range items {
 		b, err := item.MarshalJSON()
 		if err != nil {
 			return err

@@ -20,7 +20,9 @@ type binlog struct {
 
 func (b *binlog) Commit(f *Fenech) {
 	shard := f.binlog[getShardId(b.Key)]
+	f.done.Add(1)
 	go func() {
+		f.done.Done()
 		shard.Lock()
 
 		bytes, err := b.MarshalJSON()
@@ -74,7 +76,7 @@ func decodeBinLog(f *Fenech, key int, data []byte, wg *sync.WaitGroup) {
 		if len(value) != 0 {
 			binlogDec := new(binlog)
 			if err := binlogDec.UnmarshalJSON(value); err != nil {
-				panic(err.Error())
+				panic(err.Error() + "Value: " + string(value))
 			}
 
 			shard := f.maps[key]
