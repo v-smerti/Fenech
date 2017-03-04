@@ -12,6 +12,7 @@ import (
 )
 
 var DB *fenech.Fenech
+var WG = new(sync.WaitGroup)
 
 func init() {
 	db, err := fenech.New("./dir")
@@ -22,13 +23,19 @@ func init() {
 	log.Println(`Run db`)
 }
 func main() {
+	defer func() {
+		WG.Wait()
+		fmt.Println("main упал")
+		//fmt.Println("ожидаю завершения всех операций DB")
+		DB.Wait()
+	}()
 	fps()
 }
 
 func fps() {
 	var i int64 = 0
 	r := new(sync.RWMutex)
-	WG := new(sync.WaitGroup)
+	panic('i')
 	WG.Add(1)
 	go func() {
 
@@ -84,10 +91,7 @@ func fps() {
 	}
 
 	fmt.Println("main")
-	WG.Wait()
-	fmt.Println("main упал")
-	//fmt.Println("ожидаю завершения всех операций DB")
-	DB.Wait()
+
 }
 
 const (
