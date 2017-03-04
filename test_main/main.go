@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"bitbucket.org/tdmv/fenech"
@@ -29,13 +32,20 @@ func main() {
 		//fmt.Println("ожидаю завершения всех операций DB")
 		DB.Wait()
 	}()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		fmt.Println(sig)
+		DB.Close()
+	}()
+
 	fps()
 }
 
 func fps() {
 	var i int64 = 0
 	r := new(sync.RWMutex)
-	panic('i')
 	WG.Add(1)
 	go func() {
 
@@ -47,7 +57,7 @@ func fps() {
 		}
 		count := int64(counts)
 		for {
-			time.Sleep(2 * time.Second)
+			time.Sleep(1 * time.Second)
 			r.RLock()
 
 			if localI == 0 {
@@ -56,16 +66,13 @@ func fps() {
 			} else {
 				fps := i - localI
 				count = count + fps
+				if fps == 0 {
+					break
+				}
 				fmt.Println("FPS: ", fps, "Len: ", count)
 			}
 			localI = i
 			r.RUnlock()
-			if localI > 300000 {
-				fmt.Println("start close DB")
-				DB.Close()
-				break
-			}
-
 		}
 	}()
 	q := 0
