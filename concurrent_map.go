@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-const SHARD_COUNT = 32
+const SHARD_COUNT = 250
 
 type Fenech struct {
 	maps   ConcurrentMap
