@@ -33,8 +33,11 @@ func TestMapCreation(t *testing.T) {
 	if m == nil {
 		t.Error("map is null.")
 	}
-
-	if m.Count() != 0 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 0 {
 		t.Error("new map should be empty.")
 	}
 }
@@ -45,8 +48,11 @@ func TestInsert(t *testing.T) {
 
 	m.Set("elephant", elephant)
 	m.Set("monkey", monkey)
-
-	if m.Count() != 2 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 2 {
 		t.Error("map should contain exactly two elements.")
 	}
 }
@@ -68,7 +74,10 @@ func TestInsertAbsent(t *testing.T) {
 func TestGet(t *testing.T) {
 
 	// Get a missing element.
-	val, ok := m.Get("Money")
+	val, ok, err := m.Get("Money")
+	if err != nil {
+		t.Error(err)
+	}
 
 	if ok == true {
 		t.Error("ok should be false when item is missing from map.")
@@ -83,8 +92,10 @@ func TestGet(t *testing.T) {
 
 	// Retrieve inserted element.
 
-	m1, ok := m.Get("elephant")
-
+	m1, ok, err := m.Get("elephant")
+	if err != nil {
+		t.Error(err)
+	}
 	if ok == false {
 		t.Error("ok should be true for item stored within the map.")
 	}
@@ -101,16 +112,22 @@ func TestGet(t *testing.T) {
 }
 
 func TestHas(t *testing.T) {
-
+	ok, err := m.Has("Money")
+	if err != nil {
+		t.Error(err)
+	}
 	// Get a missing element.
-	if m.Has("Money") == true {
+	if ok == true {
 		t.Error("element shouldn't exists")
 	}
 
 	elephant := Animal("elephant")
 	m.Set("elephant", elephant)
-
-	if m.Has("elephant") == false {
+	ok, err = m.Has("elephant")
+	if err != nil {
+		t.Error(err)
+	}
+	if ok == false {
 		t.Error("element exists, expecting Has to return True.")
 	}
 }
@@ -121,13 +138,18 @@ func TestRemove(t *testing.T) {
 	m.Set("monkey", monkey)
 
 	m.Remove("monkey")
-
-	if m.Count() != 0 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 0 {
 		t.Error("Expecting count to be zero once item was removed.")
 	}
 
-	temp, ok := m.Get("monkey")
-
+	temp, ok, err := m.Get("monkey")
+	if err != nil {
+		t.Error(err)
+	}
 	if ok != false {
 		t.Error("Expecting ok to be false for missing items.")
 	}
@@ -137,7 +159,9 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Remove a none existing element.
-	m.Remove("noone")
+	if err := m.Remove("noone"); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestPop(t *testing.T) {
@@ -161,13 +185,18 @@ func TestPop(t *testing.T) {
 	if exists2 || !isAnimal(ml, monkey) {
 		t.Error("Pop keeps finding monkey")
 	}
-
-	if m.Count() != 0 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 0 {
 		t.Error("Expecting count to be zero once item was Pop'ed.")
 	}
 
-	temp, ok := m.Get("monkey")
-
+	temp, ok, err := m.Get("monkey")
+	if err != nil {
+		t.Error(err)
+	}
 	if ok != false {
 		t.Error("Expecting ok to be false for missing items.")
 	}
@@ -181,21 +210,31 @@ func TestCount(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
 	}
-
-	if m.Count() != 100 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 100 {
 		t.Error("Expecting 100 element within map.")
 	}
 }
 
 func TestIsEmpty(t *testing.T) {
 	removeAllKey()
-	if m.IsEmpty() == false {
+	ok, err := m.IsEmpty()
+	if err != nil {
+		t.Error(err)
+	}
+	if ok == false {
 		t.Error("new map should be empty")
 	}
 
 	m.Set("elephant", Animal("elephant"))
-
-	if m.IsEmpty() != false {
+	ok, err = m.IsEmpty()
+	if err != nil {
+		t.Error(err)
+	}
+	if ok != false {
 		t.Error("map shouldn't be empty.")
 	}
 }
@@ -208,8 +247,12 @@ func TestIterator(t *testing.T) {
 	}
 
 	counter := 0
+	iter, err := m.Iter()
+	if err != nil {
+		t.Error(err)
+	}
 	// Iterate over elements.
-	for item := range m.Iter() {
+	for item := range iter {
 		val := item.Val
 
 		if val == nil {
@@ -231,8 +274,12 @@ func TestBufferedIterator(t *testing.T) {
 	}
 
 	counter := 0
+	iter, err := m.IterBuffered()
+	if err != nil {
+		t.Error(err)
+	}
 	// Iterate over elements.
-	for item := range m.IterBuffered() {
+	for item := range iter {
 		val := item.Val
 
 		if val == nil {
@@ -270,7 +317,10 @@ func TestItems(t *testing.T) {
 		m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
 	}
 
-	items := m.Items()
+	items, err := m.Items()
+	if err != nil {
+		t.Error(err)
+	}
 
 	if len(items) != 100 {
 		t.Error("We should have counted 100 elements.")
@@ -289,7 +339,10 @@ func TestConcurrent(t *testing.T) {
 			m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
 
 			// Retrieve item from map.
-			val, _ := m.Get(strconv.Itoa(i))
+			val, _, err := m.Get(strconv.Itoa(i))
+			if err != nil {
+				t.Error(err)
+			}
 			// Parse int
 			k, err := strconv.Atoi(string(val))
 			if err != nil {
@@ -306,7 +359,10 @@ func TestConcurrent(t *testing.T) {
 			m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
 
 			// Retrieve item from map.
-			val, _ := m.Get(strconv.Itoa(i))
+			val, _, err := m.Get(strconv.Itoa(i))
+			if err != nil {
+				t.Error(err)
+			}
 			// Parse int
 			k, err := strconv.Atoi(string(val))
 			if err != nil {
@@ -329,9 +385,13 @@ func TestConcurrent(t *testing.T) {
 
 	// Sorts array, will make is simpler to verify all inserted values we're returned.
 	sort.Ints(a[0:iterations])
-
 	// Make sure map contains 1000 elements.
-	if m.Count() != iterations {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if i != iterations {
 		t.Error("Expecting 1000 elements.")
 	}
 
@@ -350,7 +410,10 @@ func TestKeys(t *testing.T) {
 		m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
 	}
 
-	keys := m.Keys()
+	keys, err := m.Keys()
+	if err != nil {
+		t.Error(err)
+	}
 	if len(keys) != 100 {
 		t.Error("We should have counted 100 elements.")
 	}
@@ -364,8 +427,11 @@ func TestMInsert(t *testing.T) {
 	}
 
 	m.MSet(animals)
-
-	if m.Count() != 2 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 2 {
 		t.Error("map should contain exactly two elements.")
 	}
 }
@@ -398,18 +464,27 @@ func TestUpsert(t *testing.T) {
 	m.Upsert("marine", whale, cb)
 	m.Upsert("predator", tiger, cb)
 	m.Upsert("predator", lion, cb)
-
-	if m.Count() != 2 {
+	i, err := m.Count()
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 2 {
 		t.Error("map should contain exactly two elements.")
 	}
 
-	marineAnimals, ok := m.Get("marine")
+	marineAnimals, ok, err := m.Get("marine")
+	if err != nil {
+		t.Error(err)
+	}
 
 	if !ok || string(marineAnimals) != "dolphinwhale" {
 		t.Error("Set, then Upsert failed")
 	}
 
-	predators, ok := m.Get("predator")
+	predators, ok, err := m.Get("predator")
+	if err != nil {
+		t.Error(err)
+	}
 	if !ok || string(predators) != "cb_lion" {
 		t.Error("Upsert, then Upsert failed")
 	}
@@ -431,7 +506,10 @@ func TestKeysWhenRemoving(t *testing.T) {
 			c.Remove(strconv.Itoa(n))
 		}(m, i)
 	}
-	keys := m.Keys()
+	keys, err := m.Keys()
+	if err != nil {
+		t.Error(err)
+	}
 	for _, k := range keys {
 		if k == "" {
 			t.Error("Empty keys returned")
@@ -440,7 +518,8 @@ func TestKeysWhenRemoving(t *testing.T) {
 }
 
 func removeAllKey() {
-	for _, key := range m.Keys() {
+	keys, _ := m.Keys()
+	for _, key := range keys {
 		m.Remove(key)
 	}
 }
