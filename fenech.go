@@ -7,38 +7,38 @@ import (
 	"sync"
 )
 
-const SHARD_COUNT = 250
+const writerCount = 250
 
 type Fenech struct {
-	maps   ConcurrentMap
-	binlog ConcurrentBinlog
+	maps   []*concurrentMap
+	binlog []*concurrentBinlog
 	done   *sync.WaitGroup
 	sync.RWMutex
-	cl bool
+	dir string
+	cl  bool
 }
-type ConcurrentBinlog []*ConcurrentBinlogShared
-type ConcurrentBinlogShared struct {
+
+type concurrentBinlog struct {
 	file *os.File
 	sync.Mutex
 }
 
-type ConcurrentMap []*ConcurrentMapShared
-type ConcurrentMapShared struct {
+type concurrentMap struct {
 	items map[string][]byte
 	sync.RWMutex
 }
 
-// Creates a new concurrent map.
+//New creates a new concurrent map.
 func New(dir string) (*Fenech, error) {
-	m := make(ConcurrentMap, SHARD_COUNT)
-	b := make(ConcurrentBinlog, SHARD_COUNT)
-	for i := 0; i < SHARD_COUNT; i++ {
+	m := make([]*concurrentMap, writerCount)
+	b := make([]*concurrentBinlog, writerCount)
+	for i := 0; i < writerCount; i++ {
 		f, err := openFile(dir + "/" + strconv.Itoa(i) + ".binlog")
 		if err != nil {
 			return new(Fenech), err
 		}
-		m[i] = &ConcurrentMapShared{items: make(map[string][]byte)}
-		b[i] = &ConcurrentBinlogShared{file: f}
+		m[i] = &concurrentMap{items: make(map[string][]byte)}
+		b[i] = &concurrentBinlog{file: f}
 	}
 
 	f := new(Fenech)
@@ -46,13 +46,14 @@ func New(dir string) (*Fenech, error) {
 	f.binlog = b
 	f.done = new(sync.WaitGroup)
 	f.cl = false
-	if err := f.restoreSnapshot(dir); err != nil {
+	f.dir = dir
+	if err := f.restoreSnapshot(); err != nil {
 		return new(Fenech), err
 	}
 	if err := f.restoreBinlog(); err != nil {
 		return new(Fenech), err
 	}
-	if err := f.upSnapshot(dir); err != nil {
+	if err := f.upSnapshot(); err != nil {
 		return new(Fenech), err
 	}
 	if err := f.clearBinlog(); err != nil {
@@ -86,12 +87,12 @@ func openFile(file string) (*os.File, error) {
 }
 
 // Returns shard under given key
-func (f *Fenech) getShard(key string) *ConcurrentMapShared {
+func (f *Fenech) getShard(key string) *concurrentMap {
 	return f.maps[getShardId(key)]
 }
 
 func getShardId(key string) uint {
-	return uint(fnv32(key)) % uint(SHARD_COUNT)
+	return uint(fnv32(key)) % uint(writerCount)
 }
 
 func (f *Fenech) MSet(data map[string][]byte) error {
@@ -192,7 +193,7 @@ func (f *Fenech) Count() (int, error) {
 		return 0, err
 	}
 	count := 0
-	for i := 0; i < SHARD_COUNT; i++ {
+	for i := 0; i < writerCount; i++ {
 		shard := f.maps[i]
 		shard.RLock()
 		count += len(shard.items)
@@ -281,11 +282,11 @@ func (f *Fenech) Iter() (<-chan Tuple, error) {
 	go func() {
 		defer f.done.Done()
 		wg := sync.WaitGroup{}
-		wg.Add(SHARD_COUNT)
+		wg.Add(writerCount)
 		// Foreach shard.
 		for _, shard := range f.maps {
 			f.done.Add(1)
-			go func(shard *ConcurrentMapShared) {
+			go func(shard *concurrentMap) {
 				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
@@ -313,11 +314,11 @@ func (f *Fenech) IterBuffered() (<-chan Tuple, error) {
 	go func() {
 		defer f.done.Done()
 		wg := sync.WaitGroup{}
-		wg.Add(SHARD_COUNT)
+		wg.Add(writerCount)
 		// Foreach shard.
 		for _, shard := range f.maps {
 			f.done.Add(1)
-			go func(shard *ConcurrentMapShared) {
+			go func(shard *concurrentMap) {
 				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
@@ -373,7 +374,7 @@ func (f *Fenech) IterCb(fn IterCb) error {
 	return nil
 }
 
-// Return all keys as []string
+//Keys return all keys as []string and error
 func (f *Fenech) Keys() ([]string, error) {
 
 	count, err := f.Count()
@@ -386,10 +387,10 @@ func (f *Fenech) Keys() ([]string, error) {
 		defer f.done.Done()
 		// Foreach shard.
 		wg := sync.WaitGroup{}
-		wg.Add(SHARD_COUNT)
+		wg.Add(writerCount)
 		for _, shard := range f.maps {
 			f.done.Add(1)
-			go func(shard *ConcurrentMapShared) {
+			go func(shard *concurrentMap) {
 				defer f.done.Done()
 				// Foreach key, value pair.
 				shard.RLock()
@@ -410,6 +411,23 @@ func (f *Fenech) Keys() ([]string, error) {
 		keys = append(keys, k)
 	}
 	return keys, nil
+}
+
+//DeleteAllKeys delete all key and clear storage
+func (f *Fenech) DeleteAllKeys() error {
+	iter, err := f.IterBuffered()
+	if err != nil {
+		return err
+	}
+	for item := range iter {
+		if err := f.Remove(item.Key); err != nil {
+			return err
+		}
+	}
+	if err := f.clearBinlog(); err != nil {
+		return err
+	}
+	return f.clearSnapshot()
 }
 
 func fnv32(key string) uint32 {

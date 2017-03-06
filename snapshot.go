@@ -2,11 +2,45 @@ package fenech
 
 import (
 	"bytes"
+	"encoding/base64"
+	"errors"
 	"os"
+	"strconv"
+	"sync"
 )
 
-func (f *Fenech) restoreSnapshot(dir string) error {
-	file, err := os.OpenFile(dir+"/snapshot.binlog", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
+var snap = new(sync.Mutex)
+
+//Encode Tuple encode to []byte
+func (t *Tuple) Encode() []byte {
+	key := base64.URLEncoding.EncodeToString([]byte(t.Key))
+	val := base64.URLEncoding.EncodeToString(t.Val)
+	return []byte(key + " " + val + "\n")
+}
+
+//Decode []byte to Tuple
+func (t *Tuple) Decode(b []byte) error {
+	d := bytes.Split(b, []byte(" "))
+	if len(d) == 2 {
+		key, err := base64.URLEncoding.DecodeString(string(d[0]))
+		if err != nil {
+			return errors.New("*Tuple.Decode: DecodeKey: base64.DecodeString: " + err.Error())
+		}
+		val, err := base64.URLEncoding.DecodeString(string(d[1]))
+		if err != nil {
+			return errors.New("*Tuple.Decode: DecodeVal: base64.DecodeString: " + err.Error())
+		}
+		t.Key = string(key)
+		t.Val = val
+		return nil
+	} else {
+		return errors.New("*Tuple.Decode: len(slice) != 2; len(slice) == " + strconv.Itoa(len(d)))
+	}
+
+}
+
+func (f *Fenech) restoreSnapshot() error {
+	file, err := os.OpenFile(f.dir+"/snapshot.binlog", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
 	defer file.Close()
 	if err != nil {
 		return err
@@ -25,7 +59,8 @@ func (f *Fenech) restoreSnapshot(dir string) error {
 		data := new(Tuple)
 		for _, val := range bytes.Split(m, []byte("\n")) {
 			if len(val) > 0 {
-				if err := data.UnmarshalJSON(val); err != nil {
+
+				if err := data.Decode(val); err != nil {
 					return err
 				}
 				shard := f.getShard(data.Key)
@@ -39,8 +74,10 @@ func (f *Fenech) restoreSnapshot(dir string) error {
 
 }
 
-func (f *Fenech) upSnapshot(dir string) error {
-	file, err := os.OpenFile(dir+"/snapshot.binlog", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
+func (f *Fenech) upSnapshot() error {
+	snap.Lock()
+	defer snap.Unlock()
+	file, err := os.OpenFile(f.dir+"/snapshot.binlog", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
 	defer file.Close()
 	if err != nil {
 		return err
@@ -53,13 +90,24 @@ func (f *Fenech) upSnapshot(dir string) error {
 		return err
 	}
 	for item := range items {
-		b, err := item.MarshalJSON()
-		if err != nil {
-			return err
-		}
-		if _, err := file.Write(append(b, []byte("\n")...)); err != nil {
+		if _, err := file.Write(item.Encode()); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (f *Fenech) clearSnapshot() error {
+	snap.Lock()
+
+	file, err := os.OpenFile(f.dir+"/snapshot.binlog", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0755)
+	defer func() {
+		snap.Unlock()
+		file.Close()
+	}()
+
+	if err != nil {
+		return err
+	}
+	return file.Truncate(0)
 }

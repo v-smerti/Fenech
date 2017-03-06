@@ -2,20 +2,57 @@ package fenech
 
 import (
 	"bytes"
+	"encoding/base64"
+	"errors"
+	"strconv"
 	"sync"
 )
 
 const (
-	Put    uint = 1
+	//Put - type operations
+	Put uint = 1
+	//Delete - type operations
 	Delete uint = 2
 )
 
-//easyjson:json
 type binlog struct {
 	Type     uint
 	Key      string
 	Value    []byte
 	callback func(error)
+}
+
+func (b *binlog) Encode() []byte {
+	types := strconv.Itoa(int(b.Type))
+	key := base64.URLEncoding.EncodeToString([]byte(b.Key))
+	val := base64.URLEncoding.EncodeToString(b.Value)
+	return []byte(types + " " + key + " " + val + "\n")
+}
+
+func (b *binlog) Decode(bs []byte) error {
+	d := bytes.Split(bs, []byte(" "))
+	if len(d) == 3 {
+		types, err := strconv.ParseUint(string(d[0]), 0, 64)
+		if err != nil {
+			return errors.New("*binlog.Decode: ParseUint: " + err.Error())
+		}
+
+		key, err := base64.URLEncoding.DecodeString(string(d[1]))
+		if err != nil {
+			return errors.New("*binlog.Decode: DecodeKey: base64.DecodeString: " + err.Error())
+		}
+		val, err := base64.URLEncoding.DecodeString(string(d[2]))
+		if err != nil {
+			return errors.New("*binlog.Decode: DecodeVal: base64.DecodeString: " + err.Error())
+		}
+
+		b.Type = uint(types)
+		b.Key = string(key)
+		b.Value = val
+		return nil
+	}
+	return errors.New("*binlog.Decode: len(slice) != 3; len(slice) == " + strconv.Itoa(len(d)))
+
 }
 
 func (b *binlog) Commit(f *Fenech) {
@@ -24,21 +61,15 @@ func (b *binlog) Commit(f *Fenech) {
 	go func() {
 		f.done.Done()
 		shard.Lock()
-
-		bytes, err := b.MarshalJSON()
-		if err != nil {
-			shard.Unlock()
-			b.callback(err)
-			return
-		}
-
-		_, err = shard.file.Write(append(bytes, []byte("\n")...))
+		_, err := shard.file.Write(b.Encode())
 		shard.Unlock()
 		b.callback(err)
 	}()
 }
 
 func (f *Fenech) clearBinlog() error {
+	f.Lock()
+	defer f.Unlock()
 	for _, blog := range f.binlog {
 		if err := blog.file.Truncate(0); err != nil {
 			return err
@@ -75,8 +106,8 @@ func decodeBinLog(f *Fenech, key int, data []byte, wg *sync.WaitGroup) {
 	for _, value := range a {
 		if len(value) != 0 {
 			binlogDec := new(binlog)
-			if err := binlogDec.UnmarshalJSON(value); err != nil {
-				panic(err.Error() + "Value: " + string(value))
+			if err := binlogDec.Decode(value); err != nil {
+				panic(err.Error())
 			}
 
 			shard := f.maps[key]

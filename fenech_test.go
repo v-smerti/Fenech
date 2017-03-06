@@ -29,7 +29,9 @@ func init() {
 
 }
 func TestMapCreation(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	if m == nil {
 		t.Error("map is null.")
 	}
@@ -133,7 +135,9 @@ func TestHas(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	monkey := Animal("monkey")
 	m.Set("monkey", monkey)
 
@@ -220,7 +224,9 @@ func TestCount(t *testing.T) {
 }
 
 func TestIsEmpty(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	ok, err := m.IsEmpty()
 	if err != nil {
 		t.Error(err)
@@ -240,7 +246,9 @@ func TestIsEmpty(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	// Insert 100 elements.
 	for i := 0; i < 100; i++ {
 		m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
@@ -404,7 +412,9 @@ func TestConcurrent(t *testing.T) {
 }
 
 func TestKeys(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	// Insert 100 elements.
 	for i := 0; i < 100; i++ {
 		m.Set(strconv.Itoa(i), Animal(strconv.Itoa(i)))
@@ -420,7 +430,9 @@ func TestKeys(t *testing.T) {
 }
 
 func TestMInsert(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	animals := map[string][]byte{
 		"elephant": Animal("elephant"),
 		"monkey":   Animal("monkey"),
@@ -447,7 +459,9 @@ func TestFnv32(t *testing.T) {
 }
 
 func TestUpsert(t *testing.T) {
-	removeAllKey()
+	if err := m.DeleteAllKeys(); err != nil {
+		t.Error(err)
+	}
 	dolphin := Animal("dolphin")
 	whale := Animal("whale")
 	tiger := Animal("tiger")
@@ -514,12 +528,5 @@ func TestKeysWhenRemoving(t *testing.T) {
 		if k == "" {
 			t.Error("Empty keys returned")
 		}
-	}
-}
-
-func removeAllKey() {
-	keys, _ := m.Keys()
-	for _, key := range keys {
-		m.Remove(key)
 	}
 }
