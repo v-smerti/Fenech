@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -28,19 +31,63 @@ func init() {
 func main() {
 	defer func() {
 		WG.Wait()
-		fmt.Println("main упал")
-		//fmt.Println("ожидаю завершения всех операций DB")
+		fmt.Println("main завершен")
 		DB.Wait()
+		fmt.Println("DB завершен")
 	}()
+
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	srv := startHttpServer()
+	httpStopped := make(chan struct{})
 	go func() {
 		sig := <-sigs
 		fmt.Println(sig)
 		DB.Close()
+		httpStopped <- struct{}{}
 	}()
+	<-httpStopped
+	fmt.Println("http stopped")
+	if err := srv.Shutdown(nil); err != nil {
+		panic(err)
+	}
 
-	fps()
+}
+
+func startHttpServer() *http.Server {
+	srv := &http.Server{Addr: ":8080"}
+
+	http.HandleFunc("/count", func(w http.ResponseWriter, r *http.Request) {
+		count, err := DB.Count()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			log.Println("Count: ", err)
+			return
+		}
+		io.WriteString(w, strconv.Itoa(count))
+	})
+	http.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("keys run")
+		keys, err := DB.Keys()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			log.Println("Keys: ", err)
+			return
+		}
+		log.Println("keys send")
+		for _, val := range keys {
+			io.WriteString(w, val+"\n")
+		}
+		log.Println("keys ok")
+	})
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Printf("Httpserver: ListenAndServe() error: %s", err)
+		}
+	}()
+	return srv
 }
 
 func fps() {
@@ -62,7 +109,7 @@ func fps() {
 
 			if localI == 0 {
 				count = count + i
-				fmt.Println("FPS 1: ", i, "Len: ", count)
+				fmt.Println("FPS: ", i, "Len: ", count)
 			} else {
 				fps := i - localI
 				count = count + fps
