@@ -30,6 +30,10 @@ type concurrentMap struct {
 
 //New creates a new concurrent map.
 func New(dir string) (*Fenech, error) {
+	if err := os.MkdirAll(dir, 0775); err != nil {
+		panic(err)
+	}
+
 	m := make([]*concurrentMap, writerCount)
 	b := make([]*concurrentBinlog, writerCount)
 	for i := 0; i < writerCount; i++ {
